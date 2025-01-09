@@ -1,0 +1,8 @@
+---
+- name: test
+  hosts: home
+  tasks:
+    - name: hello world
+      file: 
+        path: ~/hello.txt
+        state: touch
