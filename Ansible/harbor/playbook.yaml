@@ -1,0 +1,158 @@
+---
+- name: Docker setup
+  hosts: harbor
+  become: yes
+  tasks:
+    - name: Add docker repository
+      ansible.builtin.command:
+        cmd: dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+   
+    - name: Remove podman
+      ansible.builtin.command:
+        cmd: dnf remove -y podman buildah
+
+    - name: Install docker
+      ansible.builtin.package:
+        name: 
+          - docker-ce 
+          - docker-ce-cli 
+          - containerd.io
+        state: present
+
+    - name: Start and enable docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Install docker-compose
+      ansible.builtin.command:
+        cmd: curl -L --http1.1 "https://github.com/docker/compose/releases/download/v2.17.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+   
+    - name: Set execute permissions for docker-compose
+      ansible.builtin.file:
+        path: /usr/local/bin/docker-compose
+        mode: '0755'
+        state: file
+
+# In the future substitute with full private CA
+- name: Generate certificates
+  hosts: harbor
+  become: yes
+  tasks:
+    - name: Create private directory in ssl
+      ansible.builtin.file:
+        path: /etc/ssl/private
+        state: directory
+
+    - name: Create harbor directory in ssl
+      ansible.builtin.file:
+        path: /etc/ssl/harbor
+        state: directory
+
+    - name: Generate CA private key
+      ansible.builtin.command:
+        cmd: openssl genrsa -out /etc/ssl/private/ca.key 4096
+
+    - name: Generate CA certificate
+      ansible.builtin.shell: |
+        openssl req -x509 -new -nodes -sha512 -days 3650 \
+         -subj "/C=PL/CN=Personal harbor CA" \
+         -key /etc/ssl/private/ca.key \
+         -out /etc/ssl/certs/ca.crt
+
+    - name: Generate server private key
+      ansible.builtin.command:
+        cmd: openssl genrsa -out /etc/ssl/private/harbor.key 4096
+          
+    - name: Generate server certificate with IP addresses
+      ansible.builtin.shell: |
+        openssl req -sha512 -new \
+            -subj "/C=PL/CN=Personal harbor server" \
+            -key /etc/ssl/private/harbor.key \
+            -out /etc/ssl/private/harbor.csr 
+
+    - name: Generate v3.ext file for IP addresses
+      ansible.builtin.copy:
+        dest: /etc/ssl/harbor/v3.ext
+        content: |
+          authorityKeyIdentifier=keyid,issuer
+          basicConstraints=CA:FALSE
+          keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+          extendedKeyUsage = serverAuth
+          subjectAltName = @alt_names
+
+          [alt_names]
+          IP.1=192.168.101.100
+
+    - name: Sign server certificate with CA
+      ansible.builtin.shell: |
+        openssl x509 -req -sha512 -days 3650 \
+            -extfile /etc/ssl/harbor/v3.ext \
+            -CA /etc/ssl/certs/ca.crt \
+            -CAkey /etc/ssl/private/ca.key \
+            -CAcreateserial \
+            -in /etc/ssl/private/harbor.csr \
+            -out /etc/ssl/certs/harbor.crt 
+
+    - name: Convert .crt to .cert
+      ansible.builtin.command:
+        cmd: openssl x509 -inform PEM -in /etc/ssl/certs/harbor.crt -out /etc/ssl/certs/harbor.cert
+
+    - name: Create certificates directory
+      ansible.builtin.file:
+        path: /etc/docker/certs.d/192.168.101.100
+        state: directory
+
+    - name: Copy certificates to docker
+      ansible.builtin.copy:
+        src: /etc/ssl/certs/harbor.cert
+        dest: /etc/docker/certs.d/192.168.101.100
+        remote_src: yes
+      ansible.builtin.copy:
+        src: /etc/ssl/private/harbor.key
+        dest: /etc/docker/certs.d/192.168.101.100
+        remote_src: yes
+      ansible.builtin.copy:
+        src: /etc/ssl/certs/ca.crt
+        dest: /etc/docker/certs.d/
+        remote_src: yes
+
+    - name: Restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+
+- name: Setup harbor registry
+  hosts: harbor
+  tasks:
+    - name: Download Harbor
+      become: yes
+      ansible.builtin.shell: |  
+        curl -L -o /home/user/harbor-online-installer-latest.tgz \
+        $(curl -s https://api.github.com/repos/goharbor/harbor/releases/latest \
+        | jq -r '.assets[] | select(.name | test("online-installer")) | .browser_download_url')
+     
+    - name: Extract Harbor
+      ansible.builtin.unarchive:
+        src: /home/user/harbor-online-installer-latest.tgz
+        dest: /home/user
+        remote_src: yes
+
+    - name: Harbor config - copy file
+      ansible.builtin.command:
+        cmd: cp /home/user/harbor/harbor.yml.tmpl /home/user/harbor/harbor.yml
+
+    - name: Harbor config - change hostname
+      ansible.builtin.command:
+        cmd: "sed -i 's/hostname: reg.mydomain.com/hostname: 192.168.101.100/' /home/user/harbor/harbor.yml"
+
+    - name: Harbor config - https
+
+    - name: Install harbor
+      become: yes
+      ansible.builtin.command:
+        cmd: /home/user/harbor/install.sh --with-trivy
+
+
+

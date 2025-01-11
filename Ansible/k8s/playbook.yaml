@@ -1,0 +1,22 @@
+---
+- name: master and worker node 
+  hosts: master, worker
+  tasks:
+    - name: //TODO
+      ansible.builtin.package:
+        name:  
+        state: present
+
+- name: master node
+  hosts: master
+  tasks:
+    - name: hello world
+      file: 
+        path: ~/hello.txt
+        state: touch
+
+- name: worker node
+  hosts: worker
+  tasks:
+    - name: hello world
+      file:

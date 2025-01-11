@@ -74,7 +74,7 @@ resource "proxmox_vm_qemu" "test_server" {
     bridge = "vmbr0"
   }
 
-  ipconfig0 = "ip=192.168.50.${count.index + 100}/24"
+  ipconfig0 = "ip=192.168.101.${count.index + 100}/24,gw=192.168.101.1"
 
   tags = "k8s,terraform"
 
