@@ -1,22 +1,37 @@
 ---
-- name: master and worker node 
-  hosts: master, worker
-  tasks:
-    - name: //TODO
-      ansible.builtin.package:
-        name:  
-        state: present
-
-- name: master node
+- name: Setup master node
   hosts: master
   tasks:
-    - name: hello world
-      file: 
-        path: ~/hello.txt
-        state: touch
+    - name: Install k3s on master
+      become: yes
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | sh -
 
-- name: worker node
+    - name: Retrieve the k3s token from master node
+      become: yes
+      ansible.builtin.command:
+        cmd: cat /var/lib/rancher/k3s/server/node-token
+      register: token_data
+
+    - name: Add master token to a dummy host
+      add_host:
+        name: k3s_master
+        cluster_token: "{{ token_data.stdout }}"
+        ansible_host: "{{ ansible_host }}" 
+
+- name: Sync the cluster token to all nodes
+  hosts: all
+  tasks:
+    - name: Set cluster token fact for all nodes
+      set_fact:
+        shared_cluster_token: "{{ hostvars['k3s_master'].cluster_token }}"
+      when: inventory_hostname != 'master'
+
+- name: Setup worker node
   hosts: worker
   tasks:
-    - name: hello world
-      file:
+    - name: Install K3s on worker node
+      become: yes
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | K3S_URL=https://{{ hostvars['k3s_master'].ansible_host }}:6443 K3S_TOKEN={{ shared_cluster_token }} sh -
+

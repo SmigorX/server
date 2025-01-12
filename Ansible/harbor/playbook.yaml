@@ -143,11 +143,38 @@
       ansible.builtin.command:
         cmd: cp /home/user/harbor/harbor.yml.tmpl /home/user/harbor/harbor.yml
 
-    - name: Harbor config - change hostname
-      ansible.builtin.command:
-        cmd: "sed -i 's/hostname: reg.mydomain.com/hostname: 192.168.101.100/' /home/user/harbor/harbor.yml"
+    # maybe generate a template here and just copy it
 
-    - name: Harbor config - https
+    - name: Harbor config - change hostname
+      ansible.builtin.lineinfile:
+        path: /home/user/harbor/harbor.yml
+        regexp: '^ *hostname:'
+        line: '  hostname: 192.168.101.100'
+
+    - name: Harbor config - update certificate path
+      ansible.builtin.lineinfile:
+        path: /home/user/harbor/harbor.yml
+        regexp: '^ *certificate:'
+        line: '  certificate: /etc/ssl/certs/harbor.cert'
+
+    - name: Harbor config - update private key path
+      ansible.builtin.lineinfile:
+        path: /home/user/harbor/harbor.yml
+        regexp: '^ *private_key:'
+        line: '  private_key: /etc/ssl/private/harbor.key'
+
+    - name: Harbor config - remove space before hostname
+      ansible.builtin.lineinfile:
+        path: /home/user/harbor/harbor.yml
+        regexp: '^ *hostname:'
+        line: 'hostname:'
+
+    #- name: Harbor config - update harbor admin password
+
+    - name: Prepare Harbor
+      become: yes
+      ansible.builtin.command:
+        cmd: /home/user/harbor/prepare
 
     - name: Install harbor
       become: yes

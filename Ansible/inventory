@@ -1,8 +1,0 @@
-[home]
-192.168.50.100
-192.168.50.101
-
-[home:vars]
-ansible_ssh_user = user 
-ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-
